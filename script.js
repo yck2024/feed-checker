@@ -1,13 +1,9 @@
 const fileInput = document.getElementById('csvFileInput');
 const resultsDiv = document.getElementById('results');
 
-const MAX_LINES_FOR_DETECTION = 20; // How many lines to check to GUESS the delimiter
-const COMMON_DELIMITERS = [',', ';', '\t', '|']; // Comma, Semicolon, Tab, Pipe
-
 fileInput.addEventListener('change', handleFileSelect);
 
 function handleFileSelect(event) {
-    // ... (handleFileSelect remains the same as the previous version) ...
     const file = event.target.files[0];
     resultsDiv.innerHTML = '<p class="info">Processing file...</p>';
 
@@ -16,284 +12,187 @@ function handleFileSelect(event) {
         return;
     }
 
-    // Check if the file extension is common for delimited text files
+    // Basic check for file type - PapaParse will handle the actual parsing
     const fileNameLower = file.name.toLowerCase();
-    const isCsv = fileNameLower.endsWith('.csv') || file.type === 'text/csv';
-    const isTsv = fileNameLower.endsWith('.tsv') || file.type === 'text/tab-separated-values';
-
-    if (!isCsv && !isTsv) {
-        // Display a more general warning if it's not a typical CSV or TSV
-        resultsDiv.innerHTML = `<p class="warning">Warning: Selected file (${file.name}) doesn't have a common .csv or .tsv extension. Attempting to process as delimited text.</p>`;
-        // Allow processing to continue
-    } else if (!isCsv && isTsv) {
-        // Optional: Acknowledge TSV if you want specific feedback
-        // resultsDiv.innerHTML = `<p class="info">Processing TSV file: ${file.name}</p>`;
-        // Allow processing to continue
+    if (!fileNameLower.endsWith('.csv') && !fileNameLower.endsWith('.tsv')) {
+         resultsDiv.innerHTML = `<p class="warning">Warning: Selected file (${file.name}) doesn't have a common .csv or .tsv extension. Attempting to process anyway...</p>`;
+         // Let PapaParse try
     }
 
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-        try {
-            const text = e.target.result;
-            if (!text || text.trim().length === 0) {
-                resultsDiv.innerHTML = '<p class="error">Error: File is empty or could not be read.</p>';
-                return;
-            }
-            analyzeCsvContent(text);
-        } catch (error) {
-             resultsDiv.innerHTML = `<p class="error">Error reading file: ${error.message}</p>`;
-             console.error("Error reading file:", error);
-        }
-    };
-
-    reader.onerror = function(e) {
-        resultsDiv.innerHTML = `<p class="error">Error reading file: ${reader.error}</p>`;
-        console.error("File reading error:", reader.error);
-    };
-
-    // Read the file as text
-    reader.readAsText(file);
+    // --- Use PapaParse ---
+    Papa.parse(file, {
+        skipEmptyLines: true, // Skip empty lines
+        header: false,        // Don't treat first row as header
+        dynamicTyping: false, // Keep all fields as strings
+        complete: processPapaparseResults, // Callback on success
+        error: handlePapaparseError    // Callback on file reading error
+        // Add 'step' function here later for streaming large files if needed
+    });
 }
 
+function handlePapaparseError(error, file) {
+    console.error("PapaParse Error:", error, file);
+    resultsDiv.innerHTML = `<p class="error">Error reading or parsing file: ${error.message || error}</p>`;
+}
 
-function analyzeCsvContent(csvText) {
-    const lines = csvText.split(/\r?\n/);
-    const nonEmptyLines = lines.filter(line => line.trim().length > 0);
-    const totalNonEmptyRows = nonEmptyLines.length;
+function processPapaparseResults(results) {
+    console.log("PapaParse Results:", results); // Log for debugging
 
-    if (totalNonEmptyRows === 0) {
-        resultsDiv.innerHTML = '<p class="warning">File contains no data rows after trimming empty lines.</p>';
-        return;
+    const data = results.data; // Array of arrays (rows)
+    const errors = results.errors; // Array of parsing errors
+    const meta = results.meta; // Metadata (delimiter, etc.)
+
+    const totalRows = data.length;
+    let resultHTML = '<h2>Analysis Results</h2>';
+
+    // --- 1. Display Metadata ---
+    if (meta.delimiter) {
+        const delimiterName = meta.delimiter === '\t' ? 'Tab (\\t)' : `'${meta.delimiter}'`;
+        resultHTML += `<p><span class="info">Detected Delimiter:</span> ${delimiterName}</p>`;
+    } else {
+        resultHTML += `<p><span class="warning">Delimiter:</span> Could not be reliably detected by PapaParse.</p>`;
     }
+    resultHTML += `<p><span class="info">Total Rows Processed (non-empty):</span> ${totalRows}</p>`;
+    resultHTML += `<p><span class="info">File Encoding:</span> ${meta.encoding || 'Default (likely UTF-8)'}</p>`; // PapaParse might detect encoding
+    resultHTML += `<hr>`;
 
-    // --- Step 1: Delimiter Detection (using a sample) ---
-    const sampleLines = nonEmptyLines.slice(0, MAX_LINES_FOR_DETECTION);
-    const sampleSize = sampleLines.length;
-    let detectedDelimiter = null;
-    let expectedColumnCount = 0;
-    let detectionConfidence = 'low';
-
-    function getMostFrequent(arr) { /* ... (getMostFrequent remains the same) ... */
-        if (!arr || arr.length === 0) return null;
-        const counts = arr.reduce((map, val) => {
-            map[val] = (map[val] || 0) + 1;
-            return map;
-        }, {});
-        let mostFrequentVal = arr[0];
-        let maxCount = 0;
-        for (const val in counts) {
-            if (counts[val] > maxCount) {
-                maxCount = counts[val];
-                mostFrequentVal = val;
-            }
-        }
-        const numVal = parseInt(mostFrequentVal, 10);
-        return !isNaN(numVal) ? numVal : mostFrequentVal;
+    // --- 2. Display Parsing Errors (from PapaParse) ---
+    resultHTML += `<h3>Parsing Errors (Reported by PapaParse):</h3>`;
+    if (errors.length === 0) {
+        resultHTML += `<ul><li><span class="success">[OK]</span> No parsing errors reported by PapaParse.</li></ul>`;
+    } else {
+        resultHTML += `<ul>`;
+        errors.slice(0, 10).forEach(err => {
+            resultHTML += `<li><span class="error">[ERROR]</span> Type: ${err.type}, Code: ${err.code}, Message: ${err.message} (Row: ${err.row + 1})</li>`; // PapaParse row index is 0-based
+        });
+        if (errors.length > 10) resultHTML += `<li>... and ${errors.length - 10} more parsing errors</li>`;
+        resultHTML += `</ul>`;
     }
+    resultHTML += `<hr>`;
 
-    let bestGuess = { delimiter: null, count: 0, consistency: 0 };
-    for (const delimiter of COMMON_DELIMITERS) { /* ... (detection logic remains the same) ... */
-        const columnCountsInSample = sampleLines.map(line => line.split(delimiter).length);
-        if (columnCountsInSample.length === 0) continue;
-        const firstCount = columnCountsInSample[0];
-        const isConsistentInSample = columnCountsInSample.every(count => count === firstCount);
-        if (isConsistentInSample) {
-            if (firstCount > bestGuess.count) {
-                 bestGuess = { delimiter: delimiter, count: firstCount, consistency: 1 };
-            } else if (firstCount === bestGuess.count && bestGuess.consistency < 1) {
-                 bestGuess = { delimiter: delimiter, count: firstCount, consistency: 1 };
-            }
-        } else {
-            if (bestGuess.consistency === 0) {
-                const mostFrequentCount = getMostFrequent(columnCountsInSample);
-                if (mostFrequentCount > bestGuess.count && mostFrequentCount > 1) {
-                    bestGuess = { delimiter: delimiter, count: mostFrequentCount, consistency: 0 };
-                }
-            }
-        }
-    }
-
-    detectedDelimiter = bestGuess.delimiter;
-    expectedColumnCount = bestGuess.count;
-    detectionConfidence = bestGuess.consistency === 1 ? 'high' : 'low';
-
-    // --- Step 2: Validation & Display (using ALL non-empty lines) ---
-    let resultHTML = '';
+    // --- 3. Perform Additional Checks (if data exists) ---
+    resultHTML += `<h3>Additional Checks:</h3>`;
     let validationIssues = {
-        columnCount: [],      // { line, count }
-        leadingTrailingWhitespace: [], // { line, fieldIndex }
-        malformedQuotes: [],  // { line, fieldIndex }
-        unescapedQuotes: [],  // { line, fieldIndex }
-        emptyLastField: []    // { line }
+        columnCount: [],             // { line, count }
+        leadingTrailingWhitespace: [] // { line, fieldIndex }
     };
-    let firstLineEndsWithDelimiter = null;
-    let foundIssues = false;
+    let expectedColumnCount = 0;
+    let foundIssues = errors.length > 0; // Start with true if PapaParse found errors
 
-    if (detectedDelimiter) {
-        const delimiterName = detectedDelimiter === '\t' ? 'Tab (\\t)' : `'${detectedDelimiter}'`;
-        const confidenceText = detectionConfidence === 'high' ? '(High Confidence - Consistent in Sample)' : '(Low Confidence - Inconsistent in Sample)';
-        resultHTML += `<h2>Analysis Results</h2>`;
-        resultHTML += `<p><span class="info">Detected Delimiter:</span> ${delimiterName} <span class="info">${confidenceText}</span></p>`;
-        resultHTML += `<p><span class="info">Expected Columns (based on detection):</span> ${expectedColumnCount}</p>`;
-        resultHTML += `<p><span class="info">Total Non-Empty Data Rows:</span> ${totalNonEmptyRows}</p>`;
-        resultHTML += `<hr>`;
-        resultHTML += `<h3>Detailed Checks (All ${totalNonEmptyRows} Non-Empty Rows):</h3>`;
+    if (totalRows > 0) {
+        expectedColumnCount = data[0].length; // Assume first row sets the standard
+        resultHTML += `<p><span class="info">Expected Columns (based on first row):</span> ${expectedColumnCount}</p>`;
 
-        // *** Perform all checks on ALL non-empty lines ***
-        for (let i = 0; i < totalNonEmptyRows; i++) {
-            const currentLine = nonEmptyLines[i];
-            const originalLineNumber = lines.indexOf(currentLine) + 1;
-            const fields = currentLine.split(detectedDelimiter); // Simple split - CAVEAT HERE
-            const columnCount = fields.length;
+        for (let i = 0; i < totalRows; i++) {
+            const row = data[i];
+            const currentLineNumber = i + 1; // 1-based for display
+            const columnCount = row.length;
 
             // --- Check 1: Column Count ---
             if (columnCount !== expectedColumnCount) {
-                validationIssues.columnCount.push({ line: originalLineNumber, count: columnCount });
+                if (validationIssues.columnCount.length < 10) { // Limit reporting
+                    validationIssues.columnCount.push({ line: currentLineNumber, count: columnCount });
+                }
                 foundIssues = true;
             }
 
-            // --- Check 2: Inconsistent Empty Last Field ---
-            const endsWithDelimiter = currentLine.endsWith(detectedDelimiter);
-            if (i === 0) {
-                firstLineEndsWithDelimiter = endsWithDelimiter;
-            } else if (endsWithDelimiter !== firstLineEndsWithDelimiter) {
-                 // Only add if it differs from the first line's pattern
-                 // Avoid adding every line if the *first* line is the odd one out
-                if (validationIssues.emptyLastField.length < 10) { // Limit reporting
-                    validationIssues.emptyLastField.push({ line: originalLineNumber });
+            // --- Check 2: Leading/Trailing Whitespace ---
+            for (let j = 0; j < row.length; j++) {
+                const field = row[j];
+                // Check only if field is a string (PapaParse might do dynamic typing if enabled)
+                if (typeof field === 'string' && field !== field.trim()) {
+                    if (validationIssues.leadingTrailingWhitespace.length < 10) { // Limit reporting
+                         validationIssues.leadingTrailingWhitespace.push({ line: currentLineNumber, fieldIndex: j + 1 });
+                    }
+                    foundIssues = true;
                 }
-                 foundIssues = true;
             }
-
-            // --- Field-level Checks (Whitespace, Quoting) ---
-            for (let j = 0; j < fields.length; j++) {
-                const field = fields[j];
-
-                // --- Check 3: Leading/Trailing Whitespace ---
-                if (field !== field.trim() && validationIssues.leadingTrailingWhitespace.length < 10) {
-                    validationIssues.leadingTrailingWhitespace.push({ line: originalLineNumber, fieldIndex: j + 1 });
-                    foundIssues = true;
-                }
-
-                // --- Quoting Checks (Heuristics - may have limitations) ---
-                const startsWithQuote = field.startsWith('"');
-                const endsWithQuote = field.endsWith('"');
-
-                // --- Check 4: Malformed Quoting ---
-                if (startsWithQuote !== endsWithQuote && field !== '""') { // Exclude the valid "" field
-                    if (validationIssues.malformedQuotes.length < 10) {
-                         validationIssues.malformedQuotes.push({ line: originalLineNumber, fieldIndex: j + 1 });
-                    }
-                    foundIssues = true;
-                }
-                // --- Check 5: Unescaped Quotes within Quoted Field ---
-                else if (startsWithQuote && endsWithQuote && field.length > 1) { // Check non-empty quoted fields
-                    const innerContent = field.substring(1, field.length - 1);
-                    // Regex: Look for a quote (") that is NOT preceded by a quote (?<!) and NOT followed by a quote (?!")
-                    if (/(?<!")"(?!")/.test(innerContent)) {
-                        if (validationIssues.unescapedQuotes.length < 10) {
-                            validationIssues.unescapedQuotes.push({ line: originalLineNumber, fieldIndex: j + 1 });
-                        }
-                        foundIssues = true;
-                    }
-                }
-            } // End field loop
-        } // End line loop
+        }
 
         // --- Display Validation Results ---
         resultHTML += "<ul>";
 
         // Column Count
         if (validationIssues.columnCount.length === 0) {
-            resultHTML += `<li><span class="success">[OK]</span> Column Count: Consistent (${expectedColumnCount} columns).</li>`;
+            resultHTML += `<li><span class="success">[OK]</span> Column Count: Consistent (${expectedColumnCount} columns across ${totalRows} rows).</li>`;
         } else {
-            resultHTML += `<li><span class="error">[ISSUE]</span> Column Count: Inconsistent! Expected ${expectedColumnCount} columns. Found issues on ${validationIssues.columnCount.length} row(s).`;
+            resultHTML += `<li><span class="error">[ISSUE]</span> Column Count: Inconsistent! Expected ${expectedColumnCount} columns (based on row 1). Found issues on ${validationIssues.columnCount.length} row(s).`;
             resultHTML += `<ul>`;
             validationIssues.columnCount.slice(0, 5).forEach(issue => {
-                resultHTML += `<li>Line ${issue.line}: Found ${issue.count} columns</li>`;
+                resultHTML += `<li>Row ${issue.line}: Found ${issue.count} columns</li>`;
             });
             if (validationIssues.columnCount.length > 5) resultHTML += `<li>... and ${validationIssues.columnCount.length - 5} more</li>`;
             resultHTML += `</ul></li>`;
         }
 
-        // Empty Last Field
-        if (validationIssues.emptyLastField.length === 0) {
-             resultHTML += `<li><span class="success">[OK]</span> Empty Last Field: Consistent (all lines ${firstLineEndsWithDelimiter ? 'end' : 'do not end'} with the delimiter).</li>`;
-        } else {
-             resultHTML += `<li><span class="warning">[POTENTIAL ISSUE]</span> Empty Last Field: Inconsistent! First line ${firstLineEndsWithDelimiter ? 'ends' : 'does not end'} with delimiter, but ${validationIssues.emptyLastField.length} other row(s) differ (showing first few):`;
-             resultHTML += `<ul>`;
-             validationIssues.emptyLastField.slice(0, 5).forEach(issue => {
-                 resultHTML += `<li>Line ${issue.line} has different ending</li>`;
-             });
-             resultHTML += `</ul></li>`;
-        }
-
-         // Whitespace
+        // Whitespace
         if (validationIssues.leadingTrailingWhitespace.length === 0) {
              resultHTML += `<li><span class="success">[OK]</span> Leading/Trailing Whitespace: None detected in fields.</li>`;
         } else {
              resultHTML += `<li><span class="warning">[POTENTIAL ISSUE]</span> Leading/Trailing Whitespace: Found in fields on ${validationIssues.leadingTrailingWhitespace.length} location(s) (showing first few):`;
              resultHTML += `<ul>`;
              validationIssues.leadingTrailingWhitespace.slice(0, 5).forEach(issue => {
-                 resultHTML += `<li>Line ${issue.line}, Field ${issue.fieldIndex}</li>`;
+                 resultHTML += `<li>Row ${issue.line}, Field ${issue.fieldIndex}</li>`;
              });
              if (validationIssues.leadingTrailingWhitespace.length > 5) resultHTML += `<li>... and ${validationIssues.leadingTrailingWhitespace.length - 5} more</li>`;
              resultHTML += `</ul></li>`;
         }
+        resultHTML += "</ul>";
 
-        // Malformed Quoting
-        if (validationIssues.malformedQuotes.length === 0) {
-             resultHTML += `<li><span class="success">[OK]</span> Malformed Quoting: No fields found starting/ending with quotes inconsistently (heuristic check).</li>`;
-        } else {
-             resultHTML += `<li><span class="error">[ISSUE]</span> Malformed Quoting: Found potential issues on ${validationIssues.malformedQuotes.length} location(s) (showing first few):`;
-             resultHTML += `<ul>`;
-             validationIssues.malformedQuotes.slice(0, 5).forEach(issue => {
-                 resultHTML += `<li>Line ${issue.line}, Field ${issue.fieldIndex} (check if quotes are balanced)</li>`;
-             });
-             if (validationIssues.malformedQuotes.length > 5) resultHTML += `<li>... and ${validationIssues.malformedQuotes.length - 5} more</li>`;
-             resultHTML += `</ul></li>`;
-        }
-
-        // Unescaped Quotes
-        if (validationIssues.unescapedQuotes.length === 0) {
-             resultHTML += `<li><span class="success">[OK]</span> Unescaped Quotes: No single quotes found within quoted fields (heuristic check).</li>`;
-        } else {
-             resultHTML += `<li><span class="warning">[POTENTIAL ISSUE]</span> Unescaped Quotes: Found potential unescaped double-quotes (\") inside quoted fields on ${validationIssues.unescapedQuotes.length} location(s) (showing first few):`;
-             resultHTML += `<p class='info'>(Note: Standard CSV escape is usually doubling the quote: "")</p><ul>`;
-             validationIssues.unescapedQuotes.slice(0, 5).forEach(issue => {
-                 resultHTML += `<li>Line ${issue.line}, Field ${issue.fieldIndex}</li>`;
-             });
-             if (validationIssues.unescapedQuotes.length > 5) resultHTML += `<li>... and ${validationIssues.unescapedQuotes.length - 5} more</li>`;
-             resultHTML += `</ul></li>`;
-        }
-
-        resultHTML += "</ul>"; // End of detailed checks list
-
-        if (!foundIssues) {
-             resultHTML += `<p class="success">Overall Status: Looks good based on these checks!</p>`;
-        } else {
-             resultHTML += `<p class="warning">Overall Status: Potential issues found. Review the details above.</p>`;
-             resultHTML += `<p class="info"><strong>Important:</strong> These checks (especially quoting) use simple methods and may not catch all complex CSV errors. For absolute certainty with complex files, consider using a dedicated CSV parsing library.</p>`;
-        }
-
-
-        // --- File Preview ---
-        const previewLinesCount = Math.min(totalNonEmptyRows, 15);
-        const previewLines = nonEmptyLines.slice(0, previewLinesCount);
-        resultHTML += `<hr><h3>File Preview (first ${previewLinesCount} non-empty lines):</h3><pre>${previewLines.join('\n')}</pre>`;
-
+    } else if (errors.length === 0) {
+         resultHTML += `<p class="warning">File appears to be empty or contains only empty lines.</p>`;
     } else {
-        // Delimiter detection failed entirely
-        resultHTML = `<h2>Analysis Results</h2>`; // Use h2 for consistency
-        resultHTML += `<p><span class="error">Delimiter Detection Failed:</span> Could not reliably determine a common delimiter (${COMMON_DELIMITERS.map(d => d==='\t'?'\\t':d).join(', ')}) based on the first ${sampleSize} lines.</p>`;
-        resultHTML += `<p class="info">The file might use an uncommon delimiter, be significantly corrupted, empty, or not be a delimited text file.</p>`;
+         resultHTML += `<p class="info">No additional checks performed due to parsing errors or empty data.</p>`;
+    }
 
-        // Show preview even if detection failed
-        const previewLinesCount = Math.min(totalNonEmptyRows, 15);
-        const previewLines = nonEmptyLines.slice(0, previewLinesCount);
-        resultHTML += `<hr><h3>File Preview (first ${previewLinesCount} non-empty lines):</h3><pre>${previewLines.join('\n')}</pre>`;
+
+    // --- 4. Overall Status ---
+     resultHTML += `<hr>`;
+     if (!foundIssues && totalRows > 0) {
+         resultHTML += `<p class="success">Overall Status: Looks good! PapaParse reported no errors and additional checks passed.</p>`;
+     } else if (totalRows > 0) {
+         resultHTML += `<p class="warning">Overall Status: Issues found. Review PapaParse errors and additional checks above.</p>`;
+     } else if (errors.length > 0) {
+         resultHTML += `<p class="error">Overall Status: Parsing errors encountered. File may be corrupted or not in a standard CSV/TSV format.</p>`;
+     } else { // Empty file case
+         resultHTML += `<p class="warning">Overall Status: File is empty or contains no data rows.</p>`;
+     }
+
+
+    // --- 5. File Preview ---
+    if (totalRows > 0) {
+        const previewLinesCount = Math.min(totalRows, 15);
+        // Need to format the data array back into a string for preview
+        const previewText = data.slice(0, previewLinesCount)
+            .map(row => row.map(field => {
+                // Basic quoting for preview if field contains delimiter or quotes
+                const delimiter = meta.delimiter || ','; // Default to comma for quoting check
+                if (typeof field === 'string' && (field.includes(delimiter) || field.includes('"'))) {
+                    // Escape internal quotes by doubling them for CSV representation
+                    return `"${field.replace(/"/g, '""')}"`;
+                }
+                return field;
+            }).join(meta.delimiter || ',')) // Join fields with detected delimiter
+            .join('\n'); // Join rows with newline
+
+        resultHTML += `<hr><h3>File Preview (first ${previewLinesCount} rows as parsed):</h3><pre>${escapeHtml(previewText)}</pre>`;
     }
 
     resultsDiv.innerHTML = resultHTML;
 }
+
+// Simplified helper function to escape HTML for display in <pre> tag
+// Removed the problematic double quote replacement to avoid syntax errors
+function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') {
+        console.warn("escapeHtml called with non-string value:", unsafe);
+        unsafe = String(unsafe);
+    }
+    let safe = unsafe;
+    safe = safe.replace(/&/g, "&");
+    safe = safe.replace(/</g, "<");
+    safe = safe.replace(/>/g, ">");
+    // safe = safe.replace(/"/g, """); // Temporarily removed
+    safe = safe.replace(/'/g, "&#039;");
+    return safe;
+ }
