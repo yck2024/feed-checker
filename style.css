@@ -1,0 +1,48 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    padding: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+h1 {
+    color: #0056b3;
+}
+
+input[type="file"] {
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    display: block; /* Make it block level for easier spacing */
+    margin-bottom: 20px; /* Add space below the input */
+}
+
+#results {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+    min-height: 100px;
+    white-space: pre-wrap; /* Preserve whitespace and wrap lines */
+    word-wrap: break-word; /* Break long words if necessary */
+}
+
+.success {
+    color: green;
+    font-weight: bold;
+}
+
+.error {
+    color: red;
+    font-weight: bold;
+}
+
+.warning {
+    color: orange;
+    font-weight: bold;
+}
+
+.info {
+    color: #555;
+}
