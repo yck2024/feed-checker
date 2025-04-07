@@ -16,9 +16,19 @@ function handleFileSelect(event) {
         return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv') {
-         resultsDiv.innerHTML = `<p class="warning">Warning: Selected file (${file.name}) doesn't have a .csv extension. Attempting to process anyway.</p>`;
-         // Allow processing to continue
+    // Check if the file extension is common for delimited text files
+    const fileNameLower = file.name.toLowerCase();
+    const isCsv = fileNameLower.endsWith('.csv') || file.type === 'text/csv';
+    const isTsv = fileNameLower.endsWith('.tsv') || file.type === 'text/tab-separated-values';
+
+    if (!isCsv && !isTsv) {
+        // Display a more general warning if it's not a typical CSV or TSV
+        resultsDiv.innerHTML = `<p class="warning">Warning: Selected file (${file.name}) doesn't have a common .csv or .tsv extension. Attempting to process as delimited text.</p>`;
+        // Allow processing to continue
+    } else if (!isCsv && isTsv) {
+        // Optional: Acknowledge TSV if you want specific feedback
+        // resultsDiv.innerHTML = `<p class="info">Processing TSV file: ${file.name}</p>`;
+        // Allow processing to continue
     }
 
     const reader = new FileReader();
