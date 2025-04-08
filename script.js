@@ -81,7 +81,17 @@ function handleStep(results, parser) {
         results.errors.forEach(err => {
             // Add row number information if missing (PapaParse step errors might not have it)
             err.row = err.row ?? analysisState.totalRows; // Use current row count as approximation
-            if (analysisState.parsingErrors.length < 20) { // Limit stored errors
+            
+            // Check if this error is already in our list (same row, type, code, and message)
+            const isDuplicate = analysisState.parsingErrors.some(existingErr => 
+                existingErr.row === err.row && 
+                existingErr.type === err.type && 
+                existingErr.code === err.code && 
+                existingErr.message === err.message
+            );
+            
+            // Only add if it's not a duplicate and we haven't reached the limit
+            if (!isDuplicate && analysisState.parsingErrors.length < 20) {
                 analysisState.parsingErrors.push(err);
             }
             analysisState.foundIssues = true;
@@ -139,7 +149,17 @@ function handleComplete(results) {
         results.errors.forEach(err => {
              // Add row number if missing
              err.row = err.row ?? analysisState.totalRows; // Use final row count if needed
-             if (analysisState.parsingErrors.length < 20) { // Limit stored errors
+             
+             // Check if this error is already in our list (same row, type, code, and message)
+             const isDuplicate = analysisState.parsingErrors.some(existingErr => 
+                 existingErr.row === err.row && 
+                 existingErr.type === err.type && 
+                 existingErr.code === err.code && 
+                 existingErr.message === err.message
+             );
+             
+             // Only add if it's not a duplicate and we haven't reached the limit
+             if (!isDuplicate && analysisState.parsingErrors.length < 20) {
                 analysisState.parsingErrors.push(err);
              }
              analysisState.foundIssues = true;
