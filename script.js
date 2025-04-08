@@ -353,6 +353,7 @@ function updatePythonScript() {
     const scriptContent = `import re
 import os
 import sys
+import csv
 from colorama import init, Fore, Style
 
 # Known error lines from analysis
@@ -361,6 +362,7 @@ error_lines = ${JSON.stringify(errorLines, null, 4)}
 def extract_and_highlight_issues(file_path, context_lines=2):
     """
     Extract headers and issue rows with context from a log file and highlight the issue rows.
+    Also displays column numbers at the beginning of each value.
     
     Args:
         file_path (str): Path to the log file
@@ -391,7 +393,10 @@ def extract_and_highlight_issues(file_path, context_lines=2):
             # Get context lines before
             start_idx = max(0, i - context_lines)
             for j in range(start_idx, i):
-                result.append(f"{Fore.WHITE}{lines[j].rstrip()}{Style.RESET_ALL}")
+                # Process context lines to add column numbers
+                context_line = lines[j].rstrip()
+                processed_context = process_line_with_column_numbers(context_line)
+                result.append(f"{Fore.WHITE}{processed_context}{Style.RESET_ALL}")
             
             # Add the highlighted issue row with error type
             error_type_color = {
@@ -400,13 +405,18 @@ def extract_and_highlight_issues(file_path, context_lines=2):
                 'whitespace': Fore.MAGENTA
             }.get(error_info['type'], Fore.RED)
             
-            result.append(f"{error_type_color}[Line {line_number}] {line}{Style.RESET_ALL}")
+            # Process the issue line to add column numbers
+            processed_line = process_line_with_column_numbers(line)
+            result.append(f"{error_type_color}[Line {line_number}] {processed_line}{Style.RESET_ALL}")
             result.append(f"{error_type_color}Error: {error_info['message']}{Style.RESET_ALL}")
             
             # Get context lines after
             end_idx = min(len(lines), i + context_lines + 1)
             for j in range(i + 1, end_idx):
-                result.append(f"{Fore.WHITE}{lines[j].rstrip()}{Style.RESET_ALL}")
+                # Process context lines to add column numbers
+                context_line = lines[j].rstrip()
+                processed_context = process_line_with_column_numbers(context_line)
+                result.append(f"{Fore.WHITE}{processed_context}{Style.RESET_ALL}")
                 
             # Add a separator for readability
             result.append("-" * 80)
@@ -416,6 +426,61 @@ def extract_and_highlight_issues(file_path, context_lines=2):
     # Print the results
     for line in result:
         print(line)
+
+def process_line_with_column_numbers(line):
+    """
+    Process a line to add column numbers at the beginning of each value.
+    
+    Args:
+        line (str): The line to process
+        
+    Returns:
+        str: The processed line with column numbers
+    """
+    # Try to detect the delimiter
+    delimiter = detect_delimiter(line)
+    
+    # Split the line by the delimiter
+    try:
+        # Use csv module to handle quoted values correctly
+        reader = csv.reader([line], delimiter=delimiter)
+        fields = next(reader)
+    except:
+        # Fallback to simple splitting if csv parsing fails
+        fields = line.split(delimiter)
+    
+    # Add column numbers to each field
+    numbered_fields = []
+    for i, field in enumerate(fields, 1):
+        # Add column number at the beginning of each field
+        numbered_field = f"[{i}] {field}"
+        numbered_fields.append(numbered_field)
+    
+    # Join the fields back together with the same delimiter
+    return delimiter.join(numbered_fields)
+
+def detect_delimiter(line):
+    """
+    Detect the delimiter used in the line.
+    
+    Args:
+        line (str): The line to analyze
+        
+    Returns:
+        str: The detected delimiter
+    """
+    # Common delimiters to check
+    delimiters = [',', '\\t', ';', '|']
+    
+    # Count occurrences of each delimiter
+    counts = {d: line.count(d) for d in delimiters}
+    
+    # Find the delimiter with the most occurrences
+    if counts:
+        return max(counts, key=counts.get)
+    
+    # Default to comma if no delimiter is found
+    return ','
 
 if __name__ == "__main__":
     # Check if colorama is installed, if not, prompt the user
