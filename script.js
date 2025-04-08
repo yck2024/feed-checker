@@ -12,7 +12,7 @@ function resetAnalysisState() {
         expectedColumnCount: null, // Determined by the first row
         firstRowData: null,
         validationIssues: {
-            columnCount: [],             // { line, count }
+            columnCount: [],             // { line, count, rowData } <-- Added rowData
             leadingTrailingWhitespace: [] // { line, fieldIndex }
         },
         parsingErrors: [], // Errors from PapaParse step/complete
@@ -101,7 +101,8 @@ function handleStep(results, parser) {
     // Check 1: Column Count (only if expected count is set)
     if (analysisState.expectedColumnCount !== null && columnCount !== analysisState.expectedColumnCount) {
         if (analysisState.validationIssues.columnCount.length < 10) { // Limit reporting
-            analysisState.validationIssues.columnCount.push({ line: currentLineNumber, count: columnCount });
+            // Store the row data along with line and count
+            analysisState.validationIssues.columnCount.push({ line: currentLineNumber, count: columnCount, rowData: [...row] }); // Store a copy
         }
         analysisState.foundIssues = true;
     }
@@ -202,7 +203,10 @@ function handleComplete(results) {
                 resultHTML += `<li><span class="error">[ISSUE]</span> Column Count: Inconsistent! Expected ${expectedColumnCount} columns. Found issues on ${validationIssues.columnCount.length} row(s).`;
                 resultHTML += `<ul>`;
                 validationIssues.columnCount.slice(0, 5).forEach(issue => {
-                    resultHTML += `<li>Row ${issue.line}: Found ${issue.count} columns</li>`;
+                    // Display row content preview (escaped and truncated)
+                    const rowPreview = escapeHtml(issue.rowData.join(meta.delimiter || ',')); // Join with detected delimiter
+                    const truncatedPreview = rowPreview.length > 100 ? rowPreview.substring(0, 100) + '...' : rowPreview;
+                    resultHTML += `<li>Row ${issue.line}: Found ${issue.count} columns. Content: <code>${truncatedPreview}</code></li>`;
                 });
                 if (validationIssues.columnCount.length > 5) resultHTML += `<li>... and ${validationIssues.columnCount.length - 5} more</li>`;
                 resultHTML += `</ul></li>`;
@@ -213,7 +217,10 @@ function handleComplete(results) {
                  resultHTML += `<li><span class="error">[ISSUE]</span> Column Count: Inconsistent row lengths detected on ${validationIssues.columnCount.length} row(s) (showing first few):`;
                  resultHTML += `<ul>`;
                  validationIssues.columnCount.slice(0, 5).forEach(issue => {
-                     resultHTML += `<li>Row ${issue.line}: Found ${issue.count} columns</li>`;
+                     // Display row content preview (escaped and truncated)
+                     const rowPreview = escapeHtml(issue.rowData.join(meta.delimiter || ',')); // Join with detected delimiter
+                     const truncatedPreview = rowPreview.length > 100 ? rowPreview.substring(0, 100) + '...' : rowPreview;
+                     resultHTML += `<li>Row ${issue.line}: Found ${issue.count} columns. Content: <code>${truncatedPreview}</code></li>`;
                  });
                  if (validationIssues.columnCount.length > 5) resultHTML += `<li>... and ${validationIssues.columnCount.length - 5} more</li>`;
                  resultHTML += `</ul></li>`;
