@@ -46,3 +46,49 @@ input[type="file"] {
 .info {
     color: #555;
 }
+
+#pythonScriptSection {
+    margin-top: 30px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+}
+
+#pythonScriptSection h2 {
+    margin-top: 0;
+    color: #0056b3;
+}
+
+#pythonScriptSection pre {
+    background-color: #eef;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    overflow-x: auto; /* Add horizontal scroll for long lines */
+    white-space: pre; /* Preserve whitespace exactly */
+}
+
+#pythonScriptSection code {
+    font-family: monospace;
+    font-size: 0.9em;
+    color: #333;
+}
+
+#copyScriptButton {
+    padding: 8px 15px;
+    margin-bottom: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+#copyScriptButton:hover {
+    background-color: #0056b3;
+}
+
+#copyScriptButton:active {
+    background-color: #004085;
+}

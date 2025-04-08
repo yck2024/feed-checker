@@ -131,7 +131,7 @@ function handleStep(results, parser) {
 function handleComplete(results) {
     const endTime = performance.now();
     const duration = ((endTime - analysisState.startTime) / 1000).toFixed(2);
-    console.log("PapaParse Complete Results:", results); // Log final results (includes meta, errors)
+    console.log("PapaParse Complete Results:", results);
 
     // Process any final errors reported in the complete callback, if available
     // We rely on analysisState.meta captured during the first step, as results.meta might be incomplete here when using workers.
@@ -140,14 +140,13 @@ function handleComplete(results) {
              // Add row number if missing
              err.row = err.row ?? analysisState.totalRows; // Use final row count if needed
              if (analysisState.parsingErrors.length < 20) { // Limit stored errors
-                 analysisState.parsingErrors.push(err);
+                analysisState.parsingErrors.push(err);
              }
              analysisState.foundIssues = true;
         });
     } else {
         console.warn("PapaParse complete callback received incomplete results object (no errors array). Relying solely on errors found during step phase.");
     }
-
 
     let resultHTML = `<h2>Analysis Results</h2>`;
     resultHTML += `<p><span class="info">Processing Time:</span> ${duration} seconds</p>`;
@@ -183,7 +182,7 @@ function handleComplete(results) {
     resultHTML += `<h3>Additional Checks:</h3>`;
     const validationIssues = analysisState.validationIssues;
     const expectedColumnCount = analysisState.expectedColumnCount;
-    const totalRowsProcessed = analysisState.totalRows; // Use a local var for clarity
+    const totalRowsProcessed = analysisState.totalRows;
 
     if (totalRowsProcessed > 0) {
         resultHTML += "<ul>"; // Start list for checks
@@ -230,7 +229,6 @@ function handleComplete(results) {
              }
         }
 
-
         // Whitespace Check Results
         if (validationIssues.leadingTrailingWhitespace.length === 0) {
              resultHTML += `<li><span class="success">[OK]</span> Leading/Trailing Whitespace: None detected in fields.</li>`;
@@ -253,9 +251,8 @@ function handleComplete(results) {
          }
     }
 
-
     // --- 4. Overall Status ---
-     resultHTML += `<hr>`; // Keep the separator
+     resultHTML += `<hr>`;
      if (!analysisState.foundIssues && analysisState.totalRows > 0) {
          resultHTML += `<p class="success">Overall Status: Looks good! No significant errors reported and additional checks passed.</p>`;
      } else if (analysisState.totalRows > 0) {
@@ -282,9 +279,171 @@ function handleComplete(results) {
         resultHTML += `<hr><h3>File Preview (first ${previewLinesCount} rows as parsed):</h3><pre>${escapeHtml(previewText)}</pre>`;
     }
 
+    // Update Python script with current analysis results
+    updatePythonScript();
+    
+    // Show the Python script section
+    const pythonScriptSection = document.getElementById('pythonScriptSection');
+    if (pythonScriptSection) {
+        pythonScriptSection.style.display = 'block';
+    }
+
     resultsDiv.innerHTML = resultHTML;
 }
 
+// Function to update the Python script content
+function updatePythonScript() {
+    const pythonScriptCode = document.getElementById('pythonScriptCode');
+    if (!pythonScriptCode) return;
+
+    // Get the analyzed file name
+    const fileName = fileInput.files[0]?.name || 'your_file.csv';
+    
+    // Create error lines array from analysis results
+    const errorLines = [];
+    
+    // Add parsing errors
+    analysisState.parsingErrors.forEach(err => {
+        errorLines.push({
+            line: err.row + 1,
+            type: 'parsing',
+            message: err.message
+        });
+    });
+    
+    // Add column count issues
+    analysisState.validationIssues.columnCount.forEach(issue => {
+        errorLines.push({
+            line: issue.line,
+            type: 'column_count',
+            message: `Found ${issue.count} columns (expected ${analysisState.expectedColumnCount})`
+        });
+    });
+    
+    // Add whitespace issues
+    analysisState.validationIssues.leadingTrailingWhitespace.forEach(issue => {
+        errorLines.push({
+            line: issue.line,
+            type: 'whitespace',
+            message: `Field ${issue.fieldIndex} contains leading/trailing whitespace`
+        });
+    });
+
+    // Create a script that includes the current analysis results
+    const scriptContent = `import re
+import os
+import sys
+from colorama import init, Fore, Style
+
+def extract_and_highlight_issues(file_path, context_lines=2):
+    """
+    Extract headers and issue rows with context from a log file and highlight the issue rows.
+    
+    Args:
+        file_path (str): Path to the log file
+        context_lines (int): Number of lines of context to show above and below issue rows
+    """
+    # Initialize colorama for cross-platform colored terminal output
+    init()
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+    except FileNotFoundError:
+        print(f"Error: File '{file_path}' not found.")
+        return
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return
+    
+    # Known error lines from analysis
+    error_lines = ${JSON.stringify(errorLines, null, 4)}
+    
+    result = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        line_number = i + 1
+        
+        # Check if this line is in our error list
+        error_info = error_lines.find(err => err.line === line_number)
+        if error_info:
+            # Get context lines before
+            start_idx = max(0, i - context_lines)
+            for j in range(start_idx, i):
+                result.append(f"{Fore.WHITE}{lines[j].rstrip()}{Style.RESET_ALL}")
+            
+            # Add the highlighted issue row with error type
+            error_type_color = {
+                'parsing': Fore.RED,
+                'column_count': Fore.YELLOW,
+                'whitespace': Fore.MAGENTA
+            }.get(error_info.type, Fore.RED)
+            
+            result.append(f"{error_type_color}[Line {line_number}] {line}{Style.RESET_ALL}")
+            result.append(f"{error_type_color}Error: {error_info.message}{Style.RESET_ALL}")
+            
+            # Get context lines after
+            end_idx = min(len(lines), i + context_lines + 1)
+            for j in range(i + 1, end_idx):
+                result.append(f"{Fore.WHITE}{lines[j].rstrip()}{Style.RESET_ALL}")
+                
+            # Add a separator for readability
+            result.append("-" * 80)
+        
+        i += 1
+    
+    # Print the results
+    for line in result:
+        print(line)
+
+if __name__ == "__main__":
+    # Check if colorama is installed, if not, prompt the user
+    try:
+        import colorama
+    except ImportError:
+        print("Error: 'colorama' package not found.")
+        print("Please install it using: pip install colorama")
+        sys.exit(1)
+
+    if len(sys.argv) < 2:
+        print("Usage: python log_highlighter.py <log_file_path> [context_lines]")
+        sys.exit(1)
+    
+    file_path = sys.argv[1]
+    context_lines = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+    
+    print(f"Analyzing file: {file_path}")
+    print(f"Found {len(error_lines)} issues to highlight")
+    print("-" * 80)
+    
+    extract_and_highlight_issues(file_path, context_lines)`;
+
+    pythonScriptCode.textContent = scriptContent;
+}
+
+// Add event listener for the copy button
+document.addEventListener('DOMContentLoaded', function() {
+    const copyButton = document.getElementById('copyScriptButton');
+    if (copyButton) {
+        copyButton.addEventListener('click', function() {
+            const pythonScriptCode = document.getElementById('pythonScriptCode');
+            if (pythonScriptCode) {
+                navigator.clipboard.writeText(pythonScriptCode.textContent)
+                    .then(() => {
+                        const originalText = copyButton.textContent;
+                        copyButton.textContent = 'Copied!';
+                        setTimeout(() => {
+                            copyButton.textContent = originalText;
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Failed to copy text: ', err);
+                    });
+            }
+        });
+    }
+});
 
 // Simplified helper function to escape HTML for display in <pre> tag
 function escapeHtml(unsafe) {
