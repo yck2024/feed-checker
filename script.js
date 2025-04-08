@@ -355,6 +355,9 @@ import os
 import sys
 from colorama import init, Fore, Style
 
+# Known error lines from analysis
+error_lines = ${JSON.stringify(errorLines, null, 4)}
+
 def extract_and_highlight_issues(file_path, context_lines=2):
     """
     Extract headers and issue rows with context from a log file and highlight the issue rows.
@@ -376,9 +379,6 @@ def extract_and_highlight_issues(file_path, context_lines=2):
         print(f"Error reading file: {e}")
         return
     
-    # Known error lines from analysis
-    error_lines = ${JSON.stringify(errorLines, null, 4)}
-    
     result = []
     i = 0
     while i < len(lines):
@@ -386,7 +386,7 @@ def extract_and_highlight_issues(file_path, context_lines=2):
         line_number = i + 1
         
         # Check if this line is in our error list
-        error_info = error_lines.find(err => err.line === line_number)
+        error_info = next((err for err in error_lines if err['line'] == line_number), None)
         if error_info:
             # Get context lines before
             start_idx = max(0, i - context_lines)
@@ -398,10 +398,10 @@ def extract_and_highlight_issues(file_path, context_lines=2):
                 'parsing': Fore.RED,
                 'column_count': Fore.YELLOW,
                 'whitespace': Fore.MAGENTA
-            }.get(error_info.type, Fore.RED)
+            }.get(error_info['type'], Fore.RED)
             
             result.append(f"{error_type_color}[Line {line_number}] {line}{Style.RESET_ALL}")
-            result.append(f"{error_type_color}Error: {error_info.message}{Style.RESET_ALL}")
+            result.append(f"{error_type_color}Error: {error_info['message']}{Style.RESET_ALL}")
             
             # Get context lines after
             end_idx = min(len(lines), i + context_lines + 1)
@@ -426,11 +426,19 @@ if __name__ == "__main__":
         print("Please install it using: pip install colorama")
         sys.exit(1)
 
-    if len(sys.argv) < 2:
-        print("Usage: python log_highlighter.py <log_file_path> [context_lines]")
-        sys.exit(1)
+    # Get the script's directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    file_path = sys.argv[1]
+    # Default file name from the web interface
+    default_file = "${fileName}"
+    
+    # If a file path is provided as an argument, use it; otherwise use the default file
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+    else:
+        file_path = os.path.join(script_dir, default_file)
+    
+    # Get context lines from argument if provided
     context_lines = int(sys.argv[2]) if len(sys.argv) > 2 else 2
     
     print(f"Analyzing file: {file_path}")
